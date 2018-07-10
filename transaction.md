@@ -41,8 +41,9 @@ public:
 	uint32_t		ref_block_prefix;			//引用的区块头
 	unsigned_int	net_usage_words = 0UL;		//压缩后本交易可序列化的字节数
 	uint8_t			max_cpu_usage_ms = 0UL;		//为本交易计费的CPU使用单元数
-	unsigned_int	delay_sec = 0UL;
+	unsigned_int	delay_sec = 0UL;			//延迟的秒数
 	
+	//序列化宏
 	EOSLIB_SERIALIZE( transaction_header, (expiration)(ref_block_num)(ref_block_prefix)(net_usage_words)(max_cpu_usage_ms)(delay_sec) )
 
 }
@@ -50,9 +51,10 @@ public:
 class transaction : public transaction_header
 {
 public:
-	//构造函数
+	//构造函数，过期时间为当前时间60s后
 	transaction(time_point_sec exp = time_point_sec(now() + 60)) : transaction_header(exp) {}
 	
+	//发送交易
 	void send(const uint128_t& sender_id, account_name payer, bool replace_existing = false) const
 	
 	//成员变量
