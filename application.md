@@ -106,5 +106,5 @@
 	
 * **function**
 	```C++
-	
+	application& app()
 	```
