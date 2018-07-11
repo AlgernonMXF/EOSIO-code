@@ -1,5 +1,7 @@
 # application - 插件管理器
 
+定义了插件管理器类application，以及插件类plugin
+
 > inside namespace appbase
 * **namespace**
 	```C++
