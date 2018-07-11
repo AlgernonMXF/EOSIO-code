@@ -70,10 +70,41 @@
 		
 		std::shared_ptr<boost::asio::io_service>  io_serv;
 
-        void set_program_options();
-        void write_default_config(const bfs::path& cfg_file);
-        void print_default_config(std::ostream& os);
-        std::unique_ptr<class application_impl> my;
-		
+        	void set_program_options();
+        	void write_default_config(const bfs::path& cfg_file);
+        	void print_default_config(std::ostream& os);
+        	std::unique_ptr<class application_impl> my;	
 	}
+	
+	//插件类，继承abstract_plugin
+	class plugin : public abstract_plugin
+	{
+	public:
+		plugin():_name(boost::core::demangle(typeid(Impl).name())){}		//构造函数
+         	virtual ~plugin(){}							//析构函数
+
+		virtual state get_state()const override         { return _state; }	//获得插件状态state
+         	virtual const std::string& name()const override { return _name; }	//获得插件名
+
+         	virtual void register_dependencies();					//注册依赖插件
+		virtual void initialize(const variables_map& options) override;		//初始化插件
+		virtual void startup() override;					//启动插件
+		virtual void shutdown() override;					//关闭插件
+		
+	protected:
+		plugin(const string& name) : _name(name){}				//构造函数
+		
+	private:
+		state _state = abstract_plugin::registered;				//插件状态：已注册?
+		std::string _name;							//插件名
+         }
+	
+	protected:
+	
+	}
+	```
+	
+* **function**
+	```C++
+	
 	```
