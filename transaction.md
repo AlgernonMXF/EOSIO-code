@@ -37,10 +37,10 @@ public:
 	
 	//成员变量
 	time_point_sec	expiration;			//过期时间
-	uint16_t		ref_block_num;		//引用的区块号
-	uint32_t		ref_block_prefix;	//引用的区块头
+	uint16_t	ref_block_num;			//引用的区块号
+	uint32_t	ref_block_prefix;		//引用的区块头
 	unsigned_int	net_usage_words = 0UL;		//压缩后本交易可序列化的字节数
-	uint8_t			max_cpu_usage_ms = 0UL;	//为本交易计费的CPU使用单元数
+	uint8_t		max_cpu_usage_ms = 0UL;		//为本交易计费的CPU使用单元数
 	unsigned_int	delay_sec = 0UL;		//延迟的秒数
 	
 	//序列化宏
