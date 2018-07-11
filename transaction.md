@@ -36,12 +36,12 @@ public:
 	transaction_header(time_point_sec exp = time_point_sec(now() + 60)) : expiration(exp) {}
 	
 	//成员变量
-	time_point_sec	expiration;					//过期时间
-	uint16_t		ref_block_num;				//引用的区块号
-	uint32_t		ref_block_prefix;			//引用的区块头
+	time_point_sec	expiration;			//过期时间
+	uint16_t		ref_block_num;		//引用的区块号
+	uint32_t		ref_block_prefix;	//引用的区块头
 	unsigned_int	net_usage_words = 0UL;		//压缩后本交易可序列化的字节数
-	uint8_t			max_cpu_usage_ms = 0UL;		//为本交易计费的CPU使用单元数
-	unsigned_int	delay_sec = 0UL;			//延迟的秒数
+	uint8_t			max_cpu_usage_ms = 0UL;	//为本交易计费的CPU使用单元数
+	unsigned_int	delay_sec = 0UL;		//延迟的秒数
 	
 	//序列化宏
 	EOSLIB_SERIALIZE( transaction_header, (expiration)(ref_block_num)(ref_block_prefix)(net_usage_words)(max_cpu_usage_ms)(delay_sec) )
@@ -59,7 +59,7 @@ public:
 	
 	//成员变量
 	vector<action>		context_free_actions;	//上下文无关操作
-	vector<action>		actions;				//操作
+	vector<action>		actions;		//操作
 	extensions_types	transaction_extensions;	
 	
 	EOSLIB_SERIALIZE_DERIVED( transaction, transaction_header, (context_free_actions)(actions)(transaction_extensions) )
