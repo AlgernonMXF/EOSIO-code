@@ -1,10 +1,10 @@
 # application - 插件管理器
 
-> inside namesapce appbase
+> inside namespace appbase
 * **namespace**
 	```C++
-	namesapce bpo = boost::program_options
-	namesapce bfs = boost::filesystem
+	namespace bpo = boost::program_options
+	namespace bfs = boost::filesystem
 	```
 	
 * **class**
@@ -33,10 +33,8 @@
 		void exec();
 		void quit();
 		static application& instance();
-		//寻找插件，返回抽象插件指针
-		abstract_plugin* find_plugin(const string& name) const;
-		//寻找插件，返回抽象插件地址
-		abstract_plugin& get_plugin(const string& name) const;
+		abstract_plugin* find_plugin(const string& name) const;			//寻找插件，返回抽象插件指针
+		abstract_plugin& get_plugin(const string& name) const;			//寻找插件，返回抽象插件地址
 		
 		template<typename Plugin>
 		//注册插件，先查找插件是否存在；若不存在则创建新插件并添加到map对象plugins中，同时注册插件自己的依赖
