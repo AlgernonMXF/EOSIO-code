@@ -1,13 +1,41 @@
 # transaction.hpp
-> 交易，其中包含一系列action
+> 定义交易结构体，其中包含一系列action
 
-## struct
+## 交易头transaction_header
 
-Line: `36 - 53`
-* 交易头：包含于交易相关的固定大小的数据，与交易主体数据分离，便于解析交易。
+* 交易头包含于交易相关的固定大小的数据，与交易主体数据分离。
+* 避免了解析时的动态内存分配，便于解析交易。
 * 所有交易都有到期时间，过期的区块不会被包含在区块链中；
   一旦区块时间戳大于到期时间，区块会被认定为不可逆，其中包含的交易也永远不会成立。
 * 每个region是一个独立的区块链，包含用于通信的路由结点；region内的合约可能会产生或授权region外的交易
+
+**交易头中定义的参数如下表：**
+
+|参数（名）			|类型				|大小		|含义|
+|----				|----			|----	|----|
+|expiration			|time_point_sec	|未知		|交易到期时间|
+|ref_block_num		|unit16_t		|2B		|引用的区块号（包含交易的区块号）|	
+|ref_block_prefix	|uint32_t		|4B		|引用区块号的低32位|
+|max_net_usage_words|unsigned_int	|4B		|计费网络带宽的上限，单位：8B|
+|max_cpu_usage_ms	|uint8_t		|1B		|计费CPU时间的上限，单位：ms|
+|delay_sec			|unsigned_int	|4B		|允许交易取消的延迟时间|
+
+**交易头中定义的函数：**
+* 根据区块号前缀获取区块号:
+`block_num_tyoe get_ref_blocknum(block_num_type head_blocknum) const;`
+* 设置区块号和区块号前缀：
+`void set_reference_block(const block_id_type& reference_block);`
+* 验证区块号：
+`bool verify_reference_block(const block_id_type& reference_block) const;`
+* 验证:
+`void validate() const;`
+
+
+
+## 代码
+
+Line: `36 - 53`
+定义交易头结构体
 ```C++
 struct transaction_header
 {
@@ -18,10 +46,29 @@ struct transaction_header
 	uint8_t			max_cpu_usage_ms	= 0;	//计费CPU时间的上限，单位：ms
 	fc::unsigned_int	delay_sec		= 0UL;	//允许交易取消的延迟时间
 	
-	block_num_tyoe get_ref_blocknum(block_num_type head_blocknum) const;		//获取所在区块号
-	void set_reference_block(const block_id_type& reference_block);			//设置区块号
-	bool verify_reference_block(const block_id_type& reference_block) const;	//验证区块号
-	void validate() const;								//验证
+	block_num_tyoe get_ref_blocknum(block_num_type head_blocknum) const
+	{ 
+		return ((head_blocknum/0xffff)*0xffff) + head_blocknum%0xffff; 
+	}
+	
+	void set_reference_block(const block_id_type& reference_block);		
+	{
+		//block_id_type:sha256
+		//sha256._hash[4]:int64_t 
+		ref_block_num    = fc::endian_reverse_u32(reference_block._hash[0]);
+		//问题：_hash[1]是64位，ref_block_prefix是32位???
+  	 	ref_block_prefix = reference_block._hash[1];
+	}
+	bool verify_reference_block(const block_id_type& reference_block) const
+	{
+		return ref_block_num    == (decltype(ref_block_num))fc::endian_reverse_u32(reference_block._hash[0]) &&
+          ref_block_prefix == (decltype(ref_block_prefix))reference_block._hash[1];
+	}
+	void validate() const
+	{
+		EOS_ASSERT( max_net_usage_words.value < UINT32_MAX / 8UL, transaction_exception,
+               "declared max_net_usage_words overflows when expanded to max net usage" );
+	}
 }
 ```
 
