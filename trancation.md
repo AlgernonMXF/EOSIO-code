@@ -10,31 +10,37 @@
 * 每个region是一个独立的区块链，包含用于通信的路由结点；region内的合约可能会产生或授权region外的交易
 
 
-**交易头中定义的参数如下表：**
+**交易头中定义的变量如下表：**
 
-|参数（名）			|类型				|大小		|含义|
-|----				|----			|----	|----|
-|expiration			|time_point_sec	|未知		|交易到期时间|
-|ref_block_num		|unit16_t		|2B		|引用的区块号（包含交易的区块号）|	
-|ref_block_prefix	|uint32_t		|4B		|引用区块号的低32位|
+|变量（名）		|类型		|大小		|含义|
+|----			|----		|----		|----|
+|expiration		|time_point_sec	|未知		|交易到期时间|
+|ref_block_num		|unit16_t	|2B		|引用的区块号（包含交易的区块号）|	
+|ref_block_prefix	|uint32_t	|4B		|引用区块号的低32位|
 |max_net_usage_words|unsigned_int	|4B		|计费网络带宽的上限，单位：8B|
-|max_cpu_usage_ms	|uint8_t		|1B		|计费CPU时间的上限，单位：ms|
-|delay_sec			|unsigned_int	|4B		|允许交易取消的延迟时间|
+|max_cpu_usage_ms	|uint8_t	|1B		|计费CPU时间的上限，单位：ms|
+|delay_sec		|unsigned_int	|4B		|允许交易取消的延迟时间|
 
 
 **交易头中定义的函数：**
-* 根据区块号前缀获取区块号:
-`block_num_tyoe get_ref_blocknum(block_num_type head_blocknum) const;`
-* 设置区块号和区块号前缀：
-`void set_reference_block(const block_id_type& reference_block);`
-* 验证区块号：
-`bool verify_reference_block(const block_id_type& reference_block) const;`
-* 验证:
-`void validate() const;`
+* 根据区块号前缀获取区块号:        
+```C++
+block_num_tyoe get_ref_blocknum(block_num_type head_blocknum) const;
+```
+* 设置区块号和区块号前缀：        
+```C++
+void set_reference_block(const block_id_type& reference_block);
+```
+* 验证区块号：     
+```C++
+bool verify_reference_block(const block_id_type& reference_block) const;
+```
+* 验证:        
+```C++
+void validate() const;
+```
 
-
-
-## 代码
+### 代码
 
 Line: `36 - 53`
 定义交易头结构体
@@ -63,15 +69,54 @@ struct transaction_header
 	}
 	bool verify_reference_block(const block_id_type& reference_block) const
 	{
-		return ref_block_num    == (decltype(ref_block_num))fc::endian_reverse_u32(reference_block._hash[0]) &&
-          ref_block_prefix == (decltype(ref_block_prefix))reference_block._hash[1];
+		return ref_block_num == (decltype(ref_block_num))fc::endian_reverse_u32(reference_block._hash[0]) &&
+			ref_block_prefix == (decltype(ref_block_prefix))reference_block._hash[1];
 	}
 	void validate() const
 	{
+		//最大网络带宽使用量不超过2^32
 		EOS_ASSERT( max_net_usage_words.value < UINT32_MAX / 8UL, transaction_exception,
                "declared max_net_usage_words overflows when expanded to max net usage" );
 	}
 }
+```
+
+## 交易 transaction
+
+交易由一组必须被全部应用或全部拒绝的消息组成，这些消息可以访问给定读写范围内的区域
+
+**交易中包含的参数如下表**
+
+|变量名		|类型			|大小	|含义|
+|------			|--------		|--	|----|
+|context_free_actions	|vector<actiton>|	|上下文无关的action集|
+|actions		|vector<action>	|	|相互之间有联系的action集|
+|transaction_extensions	|extension_type	|	|	|
+
+**交易中包含的函数如下**
+
+* 获取交易id：         
+```C++
+transaction_id_type id() const;
+```
+* 签名摘要：          
+```C++
+digest_type sig_digest( const chain_id_type& chain_id, const vector<bytes>& cfd = vector<bytes>() ) const;
+```
+* 从签名中提取公钥：          
+```C++
+flat_set<public_key_type>  get_signature_keys( const vector<signature_type>& signatures,        
+						const chain_id_type& chain_id,        
+						const vector<bytes>& cfd = vector<bytes>(),       
+						bool allow_duplicate_keys = false ) const;
+```
+* 获取交易中包含的总操作数;
+```C++
+uint32_t total_actions()const；
+```
+* 获取交易的首个授权人？
+```C++
+account_name first_authorizor()const；
 ```
 
 Line: `62 - `
@@ -84,12 +129,88 @@ struct transaction : public transaction_header
 	vector<action>		actions;			//action集
 	extension_type		transaction_extension;		//
 	
-	transaction_id_type		id()const;			//交易id
-	digest_type			sig_digesty(const chain_id_type&, const vector<bytes>& )	//已签名的摘要？	
-	flat_set<public_key_type>	get_signature_keys();		//获取签名钥匙
-	uint32_t 			total_actions() const;		//交易中包含的总action数
-	account_name			first_authorizor() const;	//首个授权人
-}
+	transaction_id_type id()const
+	{
+		digest_type::encoder enc;			//digest_type: sha256
+		fc::raw::pack( enc, *this );
+		return enc.result();				//编码
+	}
+	
+	digest_type sig_digest( const chain_id_type& chain_id, const vector<bytes>& cfd = vector<bytes>() )const
+	{
+		digest_type::encoder enc;
+		fc::raw::pack( enc, chain_id );
+		fc::raw::pack( enc, *this );
+		if( cfd.size() ) 
+		{
+			fc::raw::pack( enc, digest_type::hash(cfd) );
+   		} 
+		else 
+		{
+      			fc::raw::pack( enc, digest_type() );
+   		}
+   		return enc.result();                   //编码
+	}
+	
+	//从签名中提取公钥
+	flat_set<public_key_type> transaction::get_signature_keys( const vector<signature_type>& signatures, 
+									const chain_id_type& chain_id, 
+									const vector<bytes>& cfd, 
+									bool allow_duplicate_keys )const
+	{ 
+		try {
+   			using boost::adaptors::transformed;
+
+   			constexpr size_t recovery_cache_size = 1000;             //用于恢复的缓冲区大小
+   			static recovery_cache_type recovery_cache;               //用于恢复的缓冲区
+   			const digest_type digest = sig_digest(chain_id, cfd);    //签名摘要
+
+   			flat_set<public_key_type> recovered_pub_keys;            //恢复的公钥
+			//遍历签名
+   			for(const signature_type& sig : signatures) 
+			{
+      				recovery_cache_type::index<by_sig>::type::iterator it = recovery_cache.get<by_sig>().find(sig);
+				public_key_type recov;
+      				if(it == recovery_cache.get<by_sig>().end() || it->trx_id != id()) {
+					//从签名和签名摘要中获取公钥
+         				recov = public_key_type(sig, digest);
+					//could fail on dup signatures; not a problem
+					//将公钥和签名组成的配对放入缓存，以便下次快速访问
+        		 		recovery_cache.emplace_back( cached_pub_key{id(), recov, sig} ); 
+      				} else {
+         				recov = it->pub_key;
+      				}
+      				bool successful_insertion = false;
+      				std::tie(std::ignore, successful_insertion) = recovered_pub_keys.insert(recov);
+     				EOS_ASSERT( allow_duplicate_keys || successful_insertion, tx_duplicate_sig,
+                  		"transaction includes more than one signature signed using the same key associated with public key: ${key}",
+                  		("key", recov)
+               			);
+   			}		
+			
+			while(recovery_cache.size() > recovery_cache_size)
+      			recovery_cache.erase(recovery_cache.begin());
+
+   			return recovered_pub_keys;
+		} FC_CAPTURE_AND_RETHROW() 
+	}
+	
+	//获取交易中包含的总操作数
+	uint32_t total_actions()const 
+	{ 
+		return context_free_actions.size() + actions.size();
+	}
+	
+	//首个授权人？
+	account_name first_authorizor()const 
+	{               
+		for( const auto& a : actions ) 
+		{
+           	 	for( const auto& u : a.authorization )
+              	 	return u.actor;
+         	}
+         	return account_name();                             //？？函数
+      	}
 ```
 
 Line: `86 - 104`
