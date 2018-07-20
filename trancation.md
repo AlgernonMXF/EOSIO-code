@@ -463,7 +463,23 @@ struct packed_transaction
    		compression = _compression;
 	}
 	
-private:
-	mutable	optional<transaction>	unpacked_trx;
-	void				local_unpack()const;	
+	//本地解包
+	void local_unpack()const
+	{
+		 try {
+      			switch(_compression) {
+         			case none:
+           	 			packed_trx = pack_transaction(t);
+            				packed_context_free_data = pack_context_free_data(cfd);
+            				break;
+         			case zlib:
+            				packed_trx = zlib_compress_transaction(t);
+            				packed_context_free_data = zlib_compress_context_free_data(cfd);
+            				break;
+         			default:
+            				FC_THROW("Unknown transaction compression algorithm");
+      			}
+   		} FC_CAPTURE_AND_RETHROW((_compression)(t))
+  		compression = _compression;
+	}
 }
