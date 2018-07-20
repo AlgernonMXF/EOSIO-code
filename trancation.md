@@ -80,12 +80,13 @@ struct transaction_header
 	}
 }
 ```
-
+        
+	
 ## 交易 transaction
 
 交易由一组必须被全部应用或全部拒绝的消息组成，这些消息可以访问给定读写范围内的区域
 
-**交易中包含的参数如下表**
+**交易中包含的变量如下表**
 
 |变量名		|类型			|大小	|含义|
 |------			|--------		|--	|----|
@@ -119,9 +120,7 @@ uint32_t total_actions()const；
 account_name first_authorizor()const；
 ```
 
-Line: `62 - `
-* 交易由一组必须被全部应用或全部拒绝的消息组成
-* 这些消息可访问给定读写范围内的数据
+### 代码
 ```C++
 struct transaction : public transaction_header
 {
@@ -213,49 +212,258 @@ struct transaction : public transaction_header
       	}
 ```
 
-Line: `86 - 104`
-已签名交易：包含签名集
+## 已签名的交易 signed_transaction
+
+**包含的变量如下表**
+
+|变量（名）		|类型			|大小	|含义|
+|---			|---			|---	|---|
+|signatures		|vector<signature_type>	|	|签名集|
+|context_free_data	|vector<bytes>		|	|上下文无关action的条目|	
+
+**包含的函数：     
+
+* 使用私钥签名，并将签名放入交易的签名集
+```C++
+const signature_type& sign(const private_key_type& key, const chain_id_type& chain_id);
+```
+* 使用私钥签名，但不将签名放入交易的签名集
+```C++
+signature_type sign(const private_key_type& key, const chain_id_type& chain_id)const;
+```
+* 从签名中提取公钥
+```C++
+flat_set<public_key_type> get_signature_keys( const chain_id_type& chain_id, bool allow_duplicate_keys = false )const;
+```
+
+### 代码
 ```C++
 struct signed_transaction : public transaction
 {	
-	signed_transaction() = default;				//构造函数
-	signed_transaction(transaction& , const vector<signature_type>& , const vector<bytes>& cfd) 
+	//构造函数
+	signed_transaction() = default;				
+	signed_transaction( transaction&& trx, const vector<signature_type>& signatures, const vector<bytes>& 				context_free_data)
+      		: transaction(std::move(trx))
+      		, signatures(signatures)
+      		, context_free_data(context_free_data){}
+		
+	//签名
+	const signature_type& sign(const private_key_type& key, const chain_id_type& chain_id)
+	{	
+		//使用私钥签名，并将签名放入签名集
+		signatures.push_back(key.sign(sig_digest(chain_id, context_free_data)));
+  		return signatures.back();
+	}		
+	signature_type sign(const private_key_type& key, const chain_id_type& chain_id) const
+	{
+		//签名，但不将签名放入交易的签名集
+		return key.sign(sig_digest(chain_id, context_free_data));
+	}
 	
-	vector<signature_type>		signatures;		//签名集
-	vector<bytes>			cfd;			//for each context-free action, there is an entry here
-	const signature_type&		sign(const private_key_type, const chain_id_ type);		//签名			
-	signature_type			sign(const private_key_type, const chain_id_ type) const;	//获取签名
-	flat_set<public_key_type>	get_signature_keys(const chian_id_type&, bool allow_duplicate_keys = false) const;	//获取签名钥匙
+	//从签名中提取公钥
+	flat_set<public_key_type>	get_signature_keys(const chian_id_type&, bool allow_duplicate_keys = false) const
+	{	
+		return transaction::get_signature_keys(signatures, chain_id, context_free_data, allow_duplicate_keys);
+	}
 }	
 ```
 
-Line: `112 - 159`
+## 打包的交易 packed_transaction            
+
+**包含的变量如下表**
+
+|变量（名）		|类型					|大小	|含义|
+|----			|----					|----	|----|
+|signatures		|vector<signature_type>			|	|签名集|
+|conpression		|fc::enum_type<uint8_t,compression_type>|	|压缩类型|
+|packed_context_free_data|bytes					|	|	|
+|packed_trx		|bytes					|	|已打包的交易|   
+|unpacked_trx		|mutable optional<transaction>		|	|用于检索的中间缓冲区|
+
+**包含的函数如下**
+* 可修改和不可修改的size
+```C++
+uint32_t get_unprunable_size()const;
+uint32_t get_prunable_size()const;
+```
+* 打包摘要
+```C++
+digest_type packed_digest()const;
+```
+* 获取交易到期时间
+```C++
+time_point_sec expiration()const; 
+```
+* 获取交易id
+```C++
+transaction_id_type id()const;
+```
+* 返回解包交易
+```C++
+bytes get_raw_transaction()const;
+```
+* 解包，返回cfd
+```C++
+vector<bytes> get_context_free_data()const;
+```
+* 解包，返回trx
+```C++
+transaction get_transaction()const;
+```
+* 返回signed_trx
+```C++
+signed_transaction get_signed_transaction()const;
+```
+* 根据压缩类型设置交易
+```C++
+void set_transaction(const transaction& t, compression_type _compression = none);
+void set_transaction(const transaction& t, const vector<bytes>& cfd, compression_type _compression = none);
+```
+
+### 代码
 ```C++
 struct packed_transaction
 {
 	enum conpression_type{none = 0, zlib = 1,};		//压缩类型
+	//构造函数
 	packed_transaction() = default;
 	explicit packed_trasaction(const transacrion&, compression_type, _compression = none);
 	explicit packed_trasaction(const signed_transacrion&, compression_type, _compression = none);
 			
-	uint32_t		get_unprunable_size() const;	//不可修改的size？
-	uint32_t		get_prunable_size() const;	//可修改的size
-	digest_type		packed_digest();		//打包摘要
+	uint32_t get_unprunable_size() const
+	{
+		uint64_t size = config::fixed_net_overhead_of_packed_trx;
+   		size += packed_trx.size();		//已打包的交易
+  		FC_ASSERT( size <= std::numeric_limits<uint32_t>::max(), "packed_transaction is too big" );
+   		return static_cast<uint32_t>(size);
+	}
 	
-	vector<signature_type>	signatures;			//签名
-	fc::enmu_type<uint8_t, compression_type>	compression;//压缩类型
-	bytes			packed_context_free_data;	//
-	bytes			packed_trx;			//已打包的交易
+	uint32_t get_prunable_size() const
+	{
+		uint64_t size = fc::raw::pack_size(signatures);
+   		size += packed_context_free_data.size();	//已打包的cfd
+   		FC_ASSERT( size <= std::numeric_limits<uint32_t>::max(), "packed_transaction is too big" );
+   		return static_cast<uint32_t>(size);
+	}
 	
-	time_point_sec		expiration()const;		//过期时间
-	transaction_id_type	id()const;
-	bytes			get_raw_transaction()const;
-	vector<bytes>		get_context_free_data()const;
-	transaction		get_transaction()const;
-	signed_transaction	get_signed_transaction()const;
-	void			set_transaction(const transaction& t, compression_type _compression = none);void						set_transaction(const transaction& t, const vector<bytes>& cfd, compression_type _compression = none);
+	digest_type packed_digest()
+	{
+		digest_type::encoder prunable;
+   		fc::raw::pack( prunable, signatures );			//打包签名集
+  	 	fc::raw::pack( prunable, packed_context_free_data );	//打包cfd
+
+  		 digest_type::encoder enc;
+   		fc::raw::pack( enc, compression );			//打包压缩类型
+   		fc::raw::pack( enc, packed_trx  );			//打包交易
+   		fc::raw::pack( enc, prunable.result() );		
+
+   		return enc.result();
+	}
+	
+	time_point_sec expiration()const
+	{	
+		local_unpack();				//解包
+   		return unpacked_trx->expiration;	//返回到期时间
+	}
+	transaction_id_type id()const
+	{
+		local_unpack();				//解包
+   		return get_transaction().id();		//返回交易id
+	}
+	
+	bytes get_raw_transaction()const
+	{
+		//解包，返回解包后的数据
+		try {
+     	 		switch(compression) {
+         			case none:
+            				return packed_trx;
+		 		case zlib:
+            				return zlib_decompress(packed_trx);
+         			default:
+			 		FC_THROW("Unknown transaction compression algorithm");
+      			}
+   		} FC_CAPTURE_AND_RETHROW((compression)(packed_trx))
+	}
+	
+	vector<bytes> get_context_free_data()const
+	{
+		//解包，并返回cfd
+		try {
+      			switch(compression) {
+         			case none:
+            				return unpack_context_free_data(packed_context_free_data);
+         			case zlib:
+            				return zlib_decompress_context_free_data(packed_context_free_data);
+         			default:
+            				FC_THROW("Unknown transaction compression algorithm");
+      			}
+   		} FC_CAPTURE_AND_RETHROW((compression)(packed_context_free_data))
+	}
+	
+	//获取解包的交易
+	transaction get_transaction()const
+	{	
+		local_unpack();
+  		return transaction(*unpacked_trx);
+	}
+	
+	//获取签名的交易
+	signed_transaction get_signed_transaction()const
+	{	
+		try {
+      			switch(compression) 
+			{
+         			case none:
+           				 return signed_transaction(get_transaction(), signatures, unpack_context_free_data(packed_context_free_data));
+         			case zlib:
+            				return signed_transaction(get_transaction(), signatures, 		zlib_decompress_context_free_data(packed_context_free_data));
+         			default:
+            				FC_THROW("Unknown transaction compression algorithm");
+     		 	}
+   		} FC_CAPTURE_AND_RETHROW((compression)(packed_trx)(packed_context_free_data))
+	}
+	
+	//根据压缩类型设置交易
+	void set_transaction(const transaction& t, compression_type _compression = none)
+	{
+		try {
+      			switch(_compression) {
+         			case none:
+            				packed_trx = pack_transaction(t);
+           	 			break;
+         			case zlib:
+            				packed_trx = zlib_compress_transaction(t);
+            				break;
+         			default:
+            				FC_THROW("Unknown transaction compression algorithm");
+      			}
+   		} FC_CAPTURE_AND_RETHROW((_compression)(t))
+   		packed_context_free_data.clear();
+   		compression = _compression;
+	}
+	
+	//根据压缩类型设置交易和cfd
+	void set_transaction(const transaction& t, const vector<bytes>& cfd, compression_type _compression = none)
+	{
+		 try {
+      			switch(_compression) {
+         			case none:
+            				packed_trx = pack_transaction(t);
+            				packed_context_free_data = pack_context_free_data(cfd);
+            				break;
+         			case zlib:
+            				packed_trx = zlib_compress_transaction(t);
+            				packed_context_free_data = zlib_compress_context_free_data(cfd);
+            				break;
+         			default:
+            				FC_THROW("Unknown transaction compression algorithm");
+      			}
+   		} FC_CAPTURE_AND_RETHROW((_compression)(t))
+   		compression = _compression;
+	}
 	
 private:
 	mutable	optional<transaction>	unpacked_trx;
-	void			local_unpack()const;	
+	void				local_unpack()const;	
 }
