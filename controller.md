@@ -29,21 +29,22 @@ enum class block_status
 **类中定义的变量如下表**
 
 |变量名		|类型				|大小	|含义|
-|actor_whitelist	|flat_set<account_name>		|||
-|actor_blacklist	|flat_set<account_name>		|||
-|contract_whitelist	|flat_set<account_name>		|||
-|contract_blacklist	|flat_set<account_name>		|||
+|--			|--				|--	|--|
+|actor_whitelist	|flat_set<account_name>		|	||
+|actor_blacklist	|flat_set<account_name>		|	||
+|contract_whitelist	|flat_set<account_name>		|	||
+|contract_blacklist	|flat_set<account_name>		|	||
 |action_blacklist	|flat_set< pair<account_name, action_name> >|||
-|key_blacklist		|flat_set<public_key_type>	|||
-|blocks_dir		|path				|||
-|state_dir		|path				|||
-|state_size		|uint64_t			|||
-|reversible_cache_size	|unit64_t			|||
-|read_only		|bool				|||
-|force_all_checks	|bool				|||
-|contracts_console	|bool				|||
-|genesis		|genesis_state			|||
-|wasm_runtime		|wasm_interface::vm_type	|||
+|key_blacklist		|flat_set<public_key_type>	|	||
+|blocks_dir		|path				|	|区块路径|
+|state_dir		|path				|	|状态路径|
+|state_size		|uint64_t			|8B	|状态大小|
+|reversible_cache_size	|unit64_t			|8B	|可逆缓存大小|
+|read_only		|bool				|1B	|是否只读|
+|force_all_checks	|bool				|1B	||
+|contracts_console	|bool				|1B	||
+|genesis		|genesis_state			|	||
+|wasm_runtime		|wasm_interface::vm_type	|	|wasm运行时间|
 
 **类中定义的函数如下**
 
