@@ -1,7 +1,7 @@
 # contoller - chain控制器
 
-**类中定义的结构体如下**
-* 待确定状态
+**类中定义的结构体/类如下**
+* 区块的pending状态
 ```C++
 struct pending_state 
 {
@@ -13,6 +13,56 @@ struct pending_state
    	void push() {_db_session.push();}
 };
 ```
+* 区块状态
+```C++
+enum class block_status 
+{
+	irreversible = 0,	//已被应用，被认为不可逆
+	validated   = 1,	//已被有效生产者签名，且被该节点应用过，但尚未不可逆
+	complete   = 2,		//已被有效生产者签名，未被应用，尚未不可逆
+	incomplete  = 3,	//正被生产者生产或被节点推测性的生产(speculatively produce)？
+};
+```
+
+## controller类
+
+**类中定义的变量如下表**
+
+|变量名		|类型				|大小	|含义|
+|actor_whitelist	|flat_set<account_name>		|||
+|actor_blacklist	|flat_set<account_name>		|||
+|contract_whitelist	|flat_set<account_name>		|||
+|contract_blacklist	|flat_set<account_name>		|||
+|action_blacklist	|flat_set< pair<account_name, action_name> >|||
+|key_blacklist		|flat_set<public_key_type>	|||
+|blocks_dir		|path				|||
+|state_dir		|path				|||
+|state_size		|uint64_t			|||
+|reversible_cache_size	|unit64_t			|||
+|read_only		|bool				|||
+|force_all_checks	|bool				|||
+|contracts_console	|bool				|||
+|genesis		|genesis_state			|||
+|wasm_runtime		|wasm_interface::vm_type	|||
+
+**类中定义的函数如下**
+
+void startup();
+
+void start_block( block_timestamp_type time = block_timestamp_type(), uint16_t confirm_block_count = 0 );
+void abort_block();
+
+vector<transaction_metadata_ptr> get_unapplied_transactions() const;
+void drop_unapplied_transaction(const transaction_metadata_ptr& trx);
+vector<transaction_id_type> get_scheduled_transactions() const;
+transaction_trace_ptr push_transaction( const transaction_metadata_ptr& trx, fc::time_point deadline, uint32_t billed_cpu_time_us = 0 );
+transaction_trace_ptr push_scheduled_transaction( const transaction_id_type& scheduled, fc::time_point deadline, uint32_t billed_cpu_time_us = 0 );
+void finalize_block();
+void commit_block();
+void pop_block();
+void push_block( const signed_block_ptr& b, block_status s = block_status::complete );
+
+
 
 ## controller_impl类            
 **类中定义的变量如下表**
