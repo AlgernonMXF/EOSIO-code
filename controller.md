@@ -50,19 +50,36 @@ enum class block_status
 
 void startup();
 
+* 开始一个新的pending区块会话（开始产生区块），并将新的trx放入其中
+```C++
 void start_block( block_timestamp_type time = block_timestamp_type(), uint16_t confirm_block_count = 0 );
-void abort_block();
-
+void abort_block();		//中止区块
+```
+* 获取未应用的交易（失败的交易）,丢掉失败的交易
+```C++
 vector<transaction_metadata_ptr> get_unapplied_transactions() const;
 void drop_unapplied_transaction(const transaction_metadata_ptr& trx);
+```
+
+* 
+```C++
 vector<transaction_id_type> get_scheduled_transactions() const;
 transaction_trace_ptr push_transaction( const transaction_metadata_ptr& trx, fc::time_point deadline, uint32_t billed_cpu_time_us = 0 );
-transaction_trace_ptr push_scheduled_transaction( const transaction_id_type& scheduled, fc::time_point deadline, uint32_t billed_cpu_time_us = 0 );
-void finalize_block();
-void commit_block();
-void pop_block();
-void push_block( const signed_block_ptr& b, block_status s = block_status::complete );
+transaction_trace_ptr push_scheduled_transaction( const transaction_id_type& scheduled, fc::time_point deadline, uint32_t billed_cpu_time_us = 0 );		//尝试执行特定交易
+```
 
+* 对区块的操作
+```C++
+void finalize_block();		//确定区块
+void commit_block();		//提交区块
+void pop_block();		//弹出区块
+void push_block( const signed_block_ptr& b, block_status s = block_status::complete );	//压入区块
+```
+
+* 
+```C++
+void push_confirmation( const header_confirmation& c );
+```
 
 
 ## controller_impl类            
