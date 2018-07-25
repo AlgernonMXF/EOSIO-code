@@ -46,9 +46,31 @@ enum class block_status
 |genesis		|genesis_state			|	||
 |wasm_runtime		|wasm_interface::vm_type	|	|wasm运行时间|
 
-**类中定义的函数如下**
 
+**类中定义的信号量如下表**
+
+|信号量		|类型						|含义|
+|----			|----						|----|
+|accepted_block_header	|signal<void(const block_state_ptr&)>		|区块头已被接受|
+|accepted_block		|signal<void(const block_state_ptr&)>		|区块已被接受|
+|irreversible_block	|signal<void(const block_state_ptr&)>		|区块已不可逆|
+|accepted_transaction	|signal<void(const transaction_metadata_ptr&)>	|交易已被接受|
+|applied_transaction	|signal<void(const transaction_trace_ptr&)>	|交易已被应用|
+|accepted_confirmation	|signal<void(const header_confirmation&)>	|确认已被接受|
+|bad_alloc		|signal<void(const int&)> 			|坏的分配|                               
+               
+	       
+> 补充说明             
+> 此处的signal即signal/slot机制，也被称作观察者模式                    
+> signal可通过connect关联多个slot，当signal发出信号，相关的slot都将被调用        
+> 详细介绍可参考boost::signal2库
+
+**类中定义的函数如下（只取部分较为重要的解释）**
+
+* 
+```C++
 void startup();
+```
 
 * 开始一个新的pending区块会话（开始产生区块），并将新的trx放入其中
 ```C++
@@ -60,14 +82,15 @@ void abort_block();		//中止区块
 vector<transaction_metadata_ptr> get_unapplied_transactions() const;
 void drop_unapplied_transaction(const transaction_metadata_ptr& trx);
 ```
-
 * 
 ```C++
-vector<transaction_id_type> get_scheduled_transactions() const;
-transaction_trace_ptr push_transaction( const transaction_metadata_ptr& trx, fc::time_point deadline, uint32_t billed_cpu_time_us = 0 );
-transaction_trace_ptr push_scheduled_transaction( const transaction_id_type& scheduled, fc::time_point deadline, uint32_t billed_cpu_time_us = 0 );		//尝试执行特定交易
+vector<transaction_id_type> get_scheduled_transactions() const;		
+transaction_trace_ptr push_scheduled_transaction( const transaction_id_type& scheduled, fc::time_point deadline, uint32_t billed_cpu_time_us = 0 );		//尝试在延迟数据库中执行特定交易？			
 ```
-
+* 将交易打包进区块/打包区块
+```C++
+transaction_trace_ptr push_transaction( const transaction_metadata_ptr& trx, fc::time_point deadline, uint32_t billed_cpu_time_us = 0 );
+```
 * 对区块的操作
 ```C++
 void finalize_block();		//确定区块
@@ -75,15 +98,14 @@ void commit_block();		//提交区块
 void pop_block();		//弹出区块
 void push_block( const signed_block_ptr& b, block_status s = block_status::complete );	//压入区块
 ```
-
-* 
+* 当收到其他节点的确认时调用，可能会更新上一不可逆区块，或引起分叉上的转换
 ```C++
 void push_confirmation( const header_confirmation& c );
 ```
 
 
-## controller_impl类            
-**类中定义的变量如下表**
+## controller_impl结构体            
+**中定义的变量如下表**
 
 |变量名		|类型			|大小	|含义|
 |--			|--			|--	|--|
@@ -92,7 +114,7 @@ void push_confirmation( const header_confirmation& c );
 |reversible_blocks	|chainbase::database	|	|数据库，存储已应用但仍可逆区块|
 |block_log		|blog			|	|区块日志|
 |pending		|vector<pending_state>	|	|待定状态集|
-|head			|block_state_ptr	|	|区块状态头|
+|head			|block_state_ptr	|	|区块头指针|
 |fork_db		|fork_database		|	|分叉数据库|
 |wasmif			|wasm_interface		|	|wasm接口|
 |resource_limits	|resource_limits_manager|	|资源管理器|
@@ -105,40 +127,41 @@ void push_confirmation( const header_confirmation& c );
 |apply_handlers		|map<account_name, map<handler_key, apply_handler> >|	|应用处理器？|
 |unapplied_transactions	|map<digest_type, transaction_metadata_ptr>	|	|未应用的交易|
 
-**类中定义的函数如下**
-* 弹出区块
+
+**struct中定义的函数如下**
+* 区块相关的操作
 ```C++
-void pop_block()；		
+void pop_block();			//弹出当前头区块，并将其上一区块设置为当前头区块
+void commit_block(bool add_to_fork_db);	//提交区块
+```
+* 广播区块信息
+```C++
+void emit( const Signal& s, Arg&& a ) {}
 ```
 
 ### 代码
 ```C++
-//弹出区块，该区块必须可逆
+//弹出当前头区块，并将其上一区块设置为当前头区块
 void pop_block() 
 {		
-	//上一区块
+	//获取上一区块
 	auto prev = fork_db.get_block( head->header.previous );
       	FC_ASSERT( prev, "attempt to pop beyond last irreversible block" );
 
-	//弹出后同时在reversible_blocks数据库中删除
+	//将当前头区块从reversible_blocks数据库中删除
       	if( const auto* b = reversible_blocks.find<reversible_block_object,by_num>(head->block_num) )
       	{
 		reversible_blocks.remove( *b );
       	}
 	
+	//将当前头区块中的所有交易放入unapplied_transactions，并用交易签名id    
       	for( const auto& t : head->trxs )
          	unapplied_transactions[t->signed_id] = t;
       	head = prev;
-      	db.undo();		//撤销（上次操作？
+      	db.undo();		//？
 }
 
-//设置应用处理函数                                                            
-void set_apply_handler( account_name receiver, account_name contract, action_name action, apply_handler v ) 
-{
-	apply_handlers[receiver][make_pair(contract,action)] = v;
-}
-
-//转发?
+//广播区块信息
 void emit( const Signal& s, Arg&& a ) 
 {
 	try {
@@ -178,7 +201,50 @@ void on_irreversible( const block_state_ptr& s )
 	{
 		reversible_blocks.remove( *objitr );
 		objitr = ubi.begin();
-      }
-   }
+     	}
+}
 
+//提交区块
+void commit_block( bool add_to_fork_db ) 
+{
+	//在离开时清空
+	auto reset_pending_on_exit = fc::make_scoped_exit([this]{ pending.reset(); });
+
+      	try {
+		//若添加到fork数据库？(新产生的区块会被添加到fork数据库)
+         	if (add_to_fork_db) 
+		{
+            		pending->_pending_block_state->validated = true;		//设置该区块有效
+			
+			//将该区块添加到fork数据库，并返回block_state_ptr；添加到数据库头部
+            		auto new_bsp = fork_db.add(pending->_pending_block_state);	
+			
+			//将该区块转发为信号量：已接收的区块头
+            		emit(self.accepted_block_header, pending->_pending_block_state);
+			
+			//判断刚刚提交的区块是否被添加到fork数据库头部
+            		head = fork_db.head();
+            		FC_ASSERT(new_bsp == head, "committed block did not become the new head in fork database");
+         	}
+
+         	if( !replaying ) 
+		{
+            		reversible_blocks.create<reversible_block_object>( [&]( auto& ubo ) {
+               		ubo.blocknum = pending->_pending_block_state->block_num;
+               		ubo.set_block( pending->_pending_block_state->block );
+            		});
+         	}
+
+		//将该区块转发为信号量：已接收的区块
+         	emit( self.accepted_block, pending->_pending_block_state );
+      	} catch (...) {
+         	// dont bother resetting pending, instead abort the block
+         	reset_pending_on_exit.cancel();
+         	abort_block();
+         	throw;
+      	}
+
+      	// push the state for pending.
+      	pending->push();
+}
 ```
