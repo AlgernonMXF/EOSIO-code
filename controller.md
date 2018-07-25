@@ -247,4 +247,119 @@ void commit_block( bool add_to_fork_db )
       	// push the state for pending.
       	pending->push();
 }
+
+
+//将交易收据添加到pending block，并返回自身
+template<typename T>                                                                                     
+const transaction_receipt& push_receipt( const T& trx, transaction_receipt_header::status_enum status,                            					uint64_t cpu_usage_us, uint64_t net_usage ) 
+{                   
+	uint64_t net_usage_words = net_usage / 8;                                                             
+    	FC_ASSERT( net_usage_words*8 == net_usage, "net_usage is not divisible by 8" );                       
+    	pending->_pending_block_state->block->transactions.emplace_back( trx );                               
+    	transaction_receipt& r = pending->_pending_block_state->block->transactions.back();                   
+    	r.cpu_usage_us         = cpu_usage_us;                                                                
+    	r.net_usage_words      = net_usage_words;                                                             
+    	r.status               = status;                                                                      
+    	return r;                                                                                             
+}     
+
+//将交易打包进区块
+transaction_trace_ptr push_transaction( const transaction_metadata_ptr& trx,
+                                        fc::time_point deadline,
+                                        bool implicit,
+                                        uint32_t billed_cpu_time_us  )
+{
+	FC_ASSERT(deadline != fc::time_point(), "deadline cannot be uninitialized");
+
+   	transaction_trace_ptr trace;
+   	try {
+      		transaction_context trx_context(self, trx->trx, trx->id);
+      		trx_context.deadline = deadline;
+      		trx_context.billed_cpu_time_us = billed_cpu_time_us;
+      		trace = trx_context.trace;
+      		try {
+         		if( implicit ) {
+            		trx_context.init_for_implicit_trx();      //初始化
+            		trx_context.can_subjectively_fail = false;
+         	} else {
+            		trx_context.init_for_input_trx( trx->packed_trx.get_unprunable_size(),
+                                            		trx->packed_trx.get_prunable_size(),
+                                            		trx->trx.signatures.size() );
+         	}
+
+         if( trx_context.can_subjectively_fail && pending->_block_status == controller::block_status::incomplete ) 
+	 {
+	 	// Assumes bill_to_accounts is the set of actors authorizing the trans
+            	check_actor_list( trx_context.bill_to_accounts ); 
+         }
+
+         trx_context.delay = fc::seconds(trx->trx.delay_sec);
+
+         if( !self.skip_auth_check() && !implicit ) 
+	 {
+            	authorization.check_authorization(
+                    	trx->trx.actions,
+                    	trx->recover_keys( chain_id ),
+                    	{},
+                    	trx_context.delay,
+                    	[](){}
+                    	/*std::bind(&transaction_context::add_cpu_usage_and_check_time, &trx_context,
+                              	std::placeholders::_1)*/,
+                    	false
+            	);
+         }
+
+         trx_context.exec();
+         trx_context.finalize(); // Automatically rounds up network and CPU usage in trace and bills payers if successful
+
+         auto restore = make_block_restore_point();
+
+         if (!implicit) {
+            transaction_receipt::status_enum s = (trx_context.delay == fc::seconds(0))
+                                                 ? transaction_receipt::executed
+                                                 : transaction_receipt::delayed;
+            trace->receipt = push_receipt(trx->packed_trx, s, trx_context.billed_cpu_time_us, trace->net_usage);
+            pending->_pending_block_state->trxs.emplace_back(trx);
+         } else {
+            transaction_receipt_header r;                //交易收据头
+            r.status = transaction_receipt::executed;    //执行情况
+            r.cpu_usage_us = trx_context.billed_cpu_time_us;
+            r.net_usage_words = trace->net_usage / 8;
+            trace->receipt = r;                          //将交易回执信息写入回执
+         }
+
+         //将交易context中已经执行的action移到区块的pending_action中
+         fc::move_append(pending->_actions, move(trx_context.executed));
+
+         //广播区块信息
+         // call the accept signal but only once for this transaction
+         if (!trx->accepted) {
+            //将trx通过完美转发forward变成信号量accepte_transaction
+            emit( self.accepted_transaction, trx);
+            trx->accepted = true;
+         }
+
+         //将trace完美转发成信号量applied_transaction
+         emit(self.applied_transaction, trace);
+
+         trx_context.squash();
+         restore.cancel();
+
+         if (!implicit) {
+            unapplied_transactions.erase( trx->signed_id );
+         }
+         return trace;
+      } catch (const fc::exception& e) {
+         trace->except = e;
+         trace->except_ptr = std::current_exception();
+      }
+
+      if (!failure_is_subjective(*trace->except)) {
+         unapplied_transactions.erase( trx->signed_id );
+      }
+
+      return trace;
+   } FC_CAPTURE_AND_RETHROW((trace))
+} /// push_transaction
+
 ```
