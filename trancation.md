@@ -21,6 +21,8 @@
 |max_cpu_usage_ms	|uint8_t	|1B		|计费CPU时间的上限，单位：ms|
 |delay_sec		|unsigned_int	|4B		|允许交易取消的延迟时间|
 
+注：                
+其中expiration, ref_block_num, ref_block_prefix是用作TaPOS算法，为了确保一笔交易在所引用的区块之后和交易过期日期之前发生。
 
 **交易头中定义的函数：**
 * 根据区块号前缀获取区块号:        
