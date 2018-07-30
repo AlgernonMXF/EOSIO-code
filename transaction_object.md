@@ -8,7 +8,7 @@
 
 |变量名		|类型					|大小	|含义|
 |----			|----					|----	|----|
-|id_type		|id					|	|类本身id|
+|id_type		|id					|	|区块id？|
 |expiration		|time_point_sec(class)			|	|交易到期时间|
 |trx_id			|transaction_id_type			|	|交易id|
 |by_expiraton		|struct					|	|根据交易到期时间检索|
