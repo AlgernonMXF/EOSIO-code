@@ -1,4 +1,4 @@
-# transaction_contaxt - 交易环境
+# transaction_context - 交易环境
 > 发送/完成交易之前，预先配置环境           
 >           
 
