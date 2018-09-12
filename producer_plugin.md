@@ -1,5 +1,3 @@
-# producer_plugin
-
 ## 区块生产
 
 #### 流程：
@@ -16,25 +14,38 @@
 				* 设置_pending_block_mode = producing 
 				* 若_pending_block_mode = speculating，**返回结果waiting**；
 				* 若pending_block_mode = producing，执行：
-						* 判断有多少区块需要当前生产者确定
-						* chain.abort_block？
-						* **chain.start_block()产块**
-							* 由当前区块头产生一个新的pending
-							* 初始化pending
-							* **push_transaction()** 执行交易并将交易回执打包进区块
-								* 创建trx_context，初始化，执行action
-								* 将回执信息写入trace_receipt
-								* 将trx_context中信息写入pending，打包进区块
-								* 调用 **emit(accepted_trx, trx)** 发布区块信息
-									* 在net_plugin中绑定信号量与插槽
-							* 清除过期交易
-							* 更新生产者权限
-							* 返回到producer_plugin::start_block()
+					* 判断有多少区块需要当前生产者确定
+					* chain.abort_block？
+					* **chain.start_block()产块**
+						* 由当前区块头产生一个新的pending
+						* 初始化pending
+						* **push_transaction()** 执行交易并将交易回执打包进区块
+							* 创建trx_context，初始化，执行action
+							* 将回执信息写入trace_receipt
+							* 将trx_context中信息写入pending，打包进区块
+							* 调用 **emit(accepted_trx, trx)** 发布区块信息
+								* 在net_plugin中绑定信号量与插槽
+						* 清除过期交易
+						* 更新生产者权限
+						* 返回到producer_plugin::start_block()
+				* start_block
 				* 获取pbs(pending_block_state)
 				* 调用push_transaction打包为应用的交易和`schedule_trx`
-				* 若打包过程中发现下一区块产生时间小于当前时间则**返回结果exhausted**
-				* 若出现异常则**返回结果failed**
-				* 否则**返回结果succeeded**
+				* 若打包过程中发现下一区块产生时间小于当前时间则 **返回结果exhausted**
+				* 若出现异常则 **返回结果failed**
+				* 否则 **返回结果succeeded**
+			* schedule_production_loop
+			* failed：50ms之后重新尝试调用schedule_production_loop()产块
+			* succeeded/exhausted:
+				* 设置_timer的到期时间
+				* 调用 **maybe_produce_block()** 进行产块的收尾工作
+					* 调用 **producer_block()**
+						*  通过chain.finalize_block()为区块添加merkel根
+						* 通过chain.sign_block()为区块签名
+						* 通过chain.commit_block()提交区块
+							* 将区块添加到fork_db
+							* 调用 **emit()** 广播已经接受区块头的信息
+							* 调用 **emit()** 广播已经接受区块的信息
 			
 
 ## 代码解析
@@ -884,4 +895,32 @@ void commit_block( bool add_to_fork_db )
 }
 ```
 
-### 产块流程11. emit()
+### 产块流程11. chain.emit()
+将交易/区块trace信息广播出去，具体实现为通过forward将参数传递给signal；并通过触发signal调用相应的slot。代码见下
+```C++
+void emit( const Signal& s, Arg&& a ) 
+{
+	try
+	{
+		s(std::forward<Arg>(a));      //将arg转发给signal
+	} 
+```
+
+在产块过程中依次调用了
+* emit( self.accepted_transaction, trx);	//1接受交易
+* emit(self.applied_transaction, trace);	//2应用交易
+* emit( self.irreversible_block, s );		//3区块不可逆
+* emit(self.accepted_block_header, pending->_pending_block_state);		//4接受区块头
+* emit( self.accepted_block, pending->_pending_block_state );		//5接收区块
+
+跟踪代码可知，在net_plugin启动时，以上5个signal已经绑定好了相应的slot。代码见下：
+```C++
+chain::controller&cc = my->chain_plug->chain();
+         //绑定信号量
+         cc.accepted_block_header.connect( boost::bind(&net_plugin_impl::accepted_block_header, my.get(), _1));
+         cc.accepted_block.connect(  boost::bind(&net_plugin_impl::accepted_block, my.get(), _1));
+         cc.irreversible_block.connect( boost::bind(&net_plugin_impl::irreversible_block, my.get(), _1));
+         cc.accepted_transaction.connect( boost::bind(&net_plugin_impl::accepted_transaction, my.get(), _1));
+         cc.applied_transaction.connect( boost::bind(&net_plugin_impl::applied_transaction, my.get(), _1));
+         cc.accepted_confirmation.connect( boost::bind(&net_plugin_impl::accepted_confirmation, my.get(), _1));
+```
